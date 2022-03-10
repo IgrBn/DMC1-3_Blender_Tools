@@ -83,7 +83,6 @@ def setup_model(context, filepath, Mod):
 
             mesh_object.parent = object
             model_collection.objects.link(mesh_object)
-            mesh_object.data.transform(mat)
 
             # Apply normals
             custom_normals = []
@@ -125,6 +124,9 @@ def setup_model(context, filepath, Mod):
                     vgroup = mesh_object.vertex_groups[ b[0] ]
                     vgroup.add([v], weights[idx], "REPLACE")
 
+
+            # rotate the object upright
+            mesh_object.data.transform(mat)
 
             # Link the armature to the object
             bpy.ops.object.mode_set(mode='OBJECT')

@@ -67,11 +67,9 @@ class DMC3_OT_importer(Operator, ImportHelper):
             print(f"\n{file.name}")
 
             if self.type == 'MODEL':
-                print("Model")
                 DMC3.model.Import(context, filepath)
 
             elif self.type == 'MOTION':
-                print("Anim")
                 DMC3.motion.Import(context, filepath)
 
         return {'FINISHED'}
@@ -84,18 +82,13 @@ classes = (
     DMC3_OT_importer
 )
 
-# def menu_func_import(self, context):
-#     self.layout.operator(DMC3_OT_importer.bl_idname, text="DMC3 HD model")
-
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    # bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
  
 def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
-    # bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
