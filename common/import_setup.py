@@ -1,76 +1,140 @@
-# from gettext import translation
+from random import sample
+import sys
 import bpy
 import os
 import imp
+import mathutils
+
+# Path hack.
+sys.path.insert( 0, os.path.join(os.path.dirname(__file__), '..') )
+
 import common
 from common.io import *
 imp.reload(common.io)
 
 
 #=====================================================================
+
+# mat = Matrix([ [.01, 0.0, 0.0, 0.0], 
+#                [0.0, 0.0, -.01, 0.], 
+#                [0.0, .01, 0.0, 0.0], 
+#                [0.0, 0.0, 0.0, 0.0] ])
+
+mat = Matrix([ [1.0, 0.0, 0.0, 0.0], 
+               [0.0, 0.0, -1., 0.0], 
+               [0.0, 1.0, 0.0, 0.0], 
+               [0.0, 0.0, 0.0, 0.0] ])
+
+matId = Matrix([ [1.0, 0.0, 0.0, 0.0], 
+               [0.0, 1.0, 0.0, 0.0], 
+               [0.0, 0.0, 1.0, 0.0], 
+               [0.0, 0.0, 0.0, 0.0] ])
+
+
+#=====================================================================
 #   Setup parsed models
 #=====================================================================
 def setup_model(context, filepath, Mod):
-    mat = Matrix([ [.01, 0.0, 0.0, 0.0], 
-                   [0.0, 0.0, -.01, 0.], 
-                   [0.0, .01, 0.0, 0.0], 
-                   [0.0, 0.0, 0.0, 0.0] ])
-
-    # mat = Matrix([ [1.0, 0.0, 0.0, 0.0], 
-    #                [0.0, 0.0, -1., 0.0], 
-    #                [0.0, 1.0, 0.0, 0.0], 
-    #                [0.0, 0.0, 0.0, 0.0] ])
-
 
     # Setup collection
     fileName = os.path.basename(filepath)
     model_collection = bpy.data.collections.new(fileName)
     context.scene.collection.children.link(model_collection)
 
+    # create an empty to parent the model to
+    empty = bpy.data.objects.new(fileName, None)
+
+    model_collection.objects.link(empty)
+
+    empty.empty_display_size = 2
+    empty.empty_display_type = 'SPHERE' 
+
 
     # Setup armature
     armature = bpy.data.armatures.new("Armature")
     armature_object = bpy.data.objects.new("Armature_object", armature)
-    # armature.show_names = True
     armature.show_axes = True
-    armature.display_type = "STICK"
+    armature.display_type = 'OCTAHEDRAL'
+    # armature.show_names = True
 
     model_collection.objects.link(armature_object)
     context.view_layer.objects.active = armature_object
+    armature_object.parent = empty
     armature_object.select_set(True)
 
     bpy.ops.object.mode_set(mode='EDIT')
 
+
     # Setup bones
-    bones = Mod.skeleton.bones
+    joints = Mod.skeleton.bones
 
-    for bone in bones:
-        joint = armature.edit_bones.new(f"bone_{bone.idx}")
-        joint.head = bone.transform
-        joint.use_relative_parent = True
+    for joint in joints:
+        bone = armature.edit_bones.new(f"bone_{joint.idx}")
+        bone.head = joint.transform
+        bone.use_relative_parent = True
 
-        if bone.parent != -1:
-            joint.parent = armature.edit_bones[bone.parent]
-            joint.tail = joint.parent.head
+        if joint.parent != -1:
+            bone.parent = armature.edit_bones[joint.parent]
+            bone.head += bone.parent.head
     
-        joint.head += joint.tail 
 
 
-    armature.transform(mat)
+
+    # calculate bone tails
+    for bone in armature.edit_bones:
+        children = bone.children
+        
+        if children:
+            childrenPosAverage = Vector([.0, .0, .0])
+
+            for c in children:
+                childrenPosAverage += c.head
+
+            childrenPosAverage /= len(children)
+
+            bone.tail = childrenPosAverage.lerp(bone.head, .5 if len(children) > 1 else 0. )
+            
+        else:
+            bone.tail = bone.head + (bone.head - bone.parent.head) * .5
+
+
+    # Create view for manual alignment along baseline.
+    bpy.ops.transform.create_orientation(name="BASELINE", overwrite=True)
+    ### Set baseline
+    slot = context.scene.transform_orientation_slots[0]
+    # Save current orientation setting
+    last_slot = slot.type
+    # Set new orientation (custom_orientation isn't available until we set the type to a custom orientation)
+    slot.type = 'BASELINE'
+    slot.custom_orientation.matrix = mat.to_3x3()
+    # Set orientation back to what it was
+    # slot.type = last_slot
+
 
     # hack to get around blender not allowing 0-length bones
+    # for bone in armature_object.pose.bones:
+    #     bone.matrix_basis = mat
+
     for bone in armature.edit_bones:
+        # print(f"{bone.name}\n{bone.matrix}\n\n")
+        # bone.transform(mat)
+        bone.tail = bone.head + Vector([.0, 1.0, .0])
+
         if bone.length <= 0.00005:
-            bone.head += Vector( [.000001, .000001, .000001] )
+            bone.tail += Vector([.000001, .0, .0])
             # print(f"\n  {bone.name}, {bone.length}")
 
+    # armature.transform(mat)
 
-    # Setup objects
+    #=====================================================================
+    # Setup objects 
+    #=====================================================================
     for i, obj in enumerate(Mod.objects):
 
         objName = f"Object_{i}"
         object = bpy.data.objects.new(objName, None)
         model_collection.objects.link(object)
+        object.parent = empty
 
 
         for j, msh in enumerate(obj.meshes):
@@ -125,9 +189,6 @@ def setup_model(context, filepath, Mod):
                     vgroup.add([v], weights[idx], "REPLACE")
 
 
-            # rotate the object upright
-            mesh_object.data.transform(mat)
-
             # Link the armature to the object
             bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -136,24 +197,45 @@ def setup_model(context, filepath, Mod):
             modifier.object = armature_object
 
 
+    # rotate the model upright
+    empty.rotation_euler = mathutils.Matrix.to_euler(mat, 'XYZ')
+
+    # print("\nPOSE MATS:\n")
+    # for bone in armature_object.pose.bones:
+    #     print(f"{bone.name}\n{bone.matrix}\n\n")
+    #     print(f"Basis {bone.name}\n{bone.matrix_basis}\n\n")
+
+
 #=====================================================================
 #   Setup parsed animations
 #=====================================================================
 def clear_animations():
-    for i in range(len(bpy.data.actions)):
-        bpy.data.actions[0].user_clear()
-        bpy.data.actions.remove(bpy.data.actions[0])
+    for action in bpy.data.actions:
+        action.user_clear()
+        bpy.data.actions.remove(action)
 
 
 def setup_animation(context, filepath, Mot):
     clear_animations()
 
     scene = bpy.data.scenes["Scene"]
-    scene.render.fps = 60.
-    scene.frame_start = Mot.startFrame
-    scene.frame_end = Mot.endFrame
+    scene.render.fps = 60
 
-    rig = bpy.context.scene.objects["Armature_object"]
+    if len(bpy.data.actions) > 0:
+        if scene.frame_start > Mot.startFrame:
+            scene.frame_start = int(Mot.startFrame)
+        
+        if scene.frame_end < Mot.endFrame:
+            scene.frame_end = int(Mot.endFrame)
+
+    else:
+        scene.frame_start = int(Mot.startFrame)
+        scene.frame_end = int(Mot.endFrame)
+
+    if context.object.type == 'scene.objects.active':
+        rig = context.object
+    else:
+        rig = context.scene.objects["Armature_object"]
 
     for bone in rig.pose.bones:
         # print(bone.name)
@@ -164,14 +246,37 @@ def setup_animation(context, filepath, Mot):
     action = bpy.data.actions.new(fileName)
 
     for trackGroup in Mot.trackGroups:
-        print(trackGroup.boneIdx)
+        # print(trackGroup.boneIdx)
 
         for track in trackGroup.tracks:
-            fcurve = action.fcurves.new(data_path = track.transformType, index=track.trackIdx)
+            fcurve = action.fcurves.new(data_path=track.transformType, index=track.trackIdx)
+            keys = track.keys
+            
+            for i in range(1, len(keys)):
+                frame_time_range = (keys[i].timeIndex - keys[i-1].timeIndex)
 
-            [ fcurve.keyframe_points.insert(key.timeIndex, key.value) for key in track.keys]
+                for frame_time in range(keys[i-1].timeIndex, keys[i].timeIndex):
+                    t = (float(frame_time) - keys[i-1].timeIndex) / frame_time_range
+                    
+                    sample_value = track.SampleKeyframe(frame_time, keys[i-1], keys[i], t)
+                    
+                    fcurve.keyframe_points.insert(frame_time, sample_value)
 
 
     ad = rig.animation_data_create()
     ad.action = action
+    
+    
+    for window in context.window_manager.windows:
+        screen = window.screen
+
+        for area in screen.areas:
+            if area.type == 'DOPESHEET_EDITOR':
+
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        with context.temp_override(window=window, area=area, region=region):
+                            bpy.ops.action.view_all()
+                        
+                        return
         

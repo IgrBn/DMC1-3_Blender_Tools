@@ -1,12 +1,12 @@
 import sys, os
+import imp
 
 from mathutils import *
 
 # Path hack.
 sys.path.insert( 0, os.path.join(os.path.dirname(__file__), '..') )
-import common
 
-import imp
+import common
 from common.io import *
 imp.reload(common.io)
 
@@ -22,19 +22,23 @@ def GetTris(verts, nrmls, triSkip, numVerts):
     for i in range(2, numVerts):
         p3 = i
 
-        if triSkip[i] == 0:
+        if not triSkip[i]:
+            # compute the triangle's facing direction
             vert1 = Vector( verts[p1] )
             vert2 = Vector( verts[p2] )
             vert3 = Vector( verts[p3] )
-            
+
+            # get edges for the basis
             faceEdge1 = vert3 - vert1
             faceEdge2 = vert2 - vert1
             faceEdge1.normalize()
             faceEdge2.normalize()
-            
+
+            # calculate the face normal
             z = faceEdge1.cross(faceEdge2)
             z.normalize()
             
+            # add imported vertex normals together to get the face normal
             normal1 = Vector( nrmls[p1] )
             normal2 = Vector( nrmls[p2] )
             normal3 = Vector( nrmls[p3] )
@@ -42,6 +46,7 @@ def GetTris(verts, nrmls, triSkip, numVerts):
             normal = Vector( normal1 + normal2 + normal3 )
             normal.normalize()
 
+            # check whether the triangle is facing in the imported normals direction and flip it otherwise
             wnd = 1 if normal.dot(z) > 0.0 else -1
 
             tris.append( [p1, p3, p2] if wnd == 1 else [p1, p2, p3] )

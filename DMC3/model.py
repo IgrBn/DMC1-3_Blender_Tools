@@ -7,10 +7,10 @@ sys.path.insert( 0, os.path.join(os.path.dirname(__file__), '..') )
 
 import common
 from common.io import *
-import common.MeshOps as MeshOps
+import common.MeshUtils as MeshUtils
 import common.import_setup as import_setup
 imp.reload(common.io)
-imp.reload(MeshOps)
+imp.reload(MeshUtils)
 imp.reload(import_setup)
 
       
@@ -50,7 +50,7 @@ class Mesh:
 
         
     def ParseVerts(self):
-        MeshOps.ParseVerts(self, self.f, Mod)
+        MeshUtils.ParseVerts(self, self.f, Mod)
         
     
 #=====================================================================
@@ -195,7 +195,7 @@ class Model:
 def Import(context, filepath):
     with open(filepath, 'rb') as f:
 
-        print("\nImporting...")
+        # print("\nImporting model...")
         
         global Mod
         Mod = Model(f)
@@ -206,7 +206,7 @@ def Import(context, filepath):
 
         import_setup.setup_model(context, filepath, Mod)
         
-        print("\nDone!\n")
+        # print("\nDone!\n")
 
 
     return {'FINISHED'}
